@@ -37,7 +37,8 @@ def prepare_export(namespaces, nodes):
     [output_graph.bind(k, v) for k, v in namespaces.items()]
 
     [output_graph.parse(
-        data=update_arches_namespace(etree.tostring(node)), nsmap=namespaces)
+        data=etree.tostring(node),
+        nsmap=namespaces)
      for node in nodes]
 
     return output_graph.serialize(format='pretty-xml')
