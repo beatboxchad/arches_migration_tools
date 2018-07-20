@@ -5,9 +5,11 @@ an Arches 4 thesaurus file and collections file for import
 
 from lxml import etree
 from rdflib import Graph
-import json
-import argparse
 import os
+import json
+import uuid
+import argparse
+
 
 parser = argparse.ArgumentParser()
 
@@ -17,7 +19,7 @@ parser.add_argument("skosfile",
 parser.add_argument("-u", "--uri",
                     nargs="?",
                     default="http://www.archesproject.org/",
-                    help="(Recommended) The root URI of your Arches installation (https://www.example.com/rdm/)"
+                    help="(Recommended) The root URI of your Arches installation's RDM (https://www.example.com/rdm/)"
                     )
 parser.add_argument("-d", "--directory",
                     nargs="?",
@@ -27,14 +29,10 @@ parser.add_argument("-d", "--directory",
 
 args = parser.parse_args()
 
-# Need to make Collections from each TopConcept.
-# Need to investigate the Arches built-ins.
-# The UUID's need to be generated for the new Collections.
-
 
 def update_arches_namespace(xml_str):
     "substitute www.archesproject.org with the installation domain"
-    return xml_str.replace("http://www.archesproject.org", args.uri)
+    return xml_str.replace("http://www.archesproject.org/", args.uri)
 
 
 def prepare_export(namespaces, nodes):
@@ -65,6 +63,27 @@ def export(filename, content):
 
 
 with open(args.skosfile, 'r') as incoming_skos:
+
+    uuid_file = 'collection_uuids.json'
+
+    with open(uuid_file, 'r') as uuid_store:
+        uuids = json.load(uuid_store)
+
+    def new_or_existing_uuid(preflabel):
+        """
+        take a topConcept's prefLabel node, parse the JSON within, and
+        return a new or existing UUID based on whether we already have
+        one for the JSON's `value` key
+        """
+        preflabel_val = json.loads(preflabel.text)['value']
+
+        if preflabel_val in uuids:
+            return uuids[preflabel_val]
+        else:
+            new_uuid = str(uuid.uuid4())
+            uuids[preflabel_val] = new_uuid
+            return new_uuid
+
     fixed_ns_raw = update_arches_namespace(incoming_skos.read())
     skos_xml = etree.fromstring(fixed_ns_raw)
     namespaces = skos_xml.nsmap
@@ -78,32 +97,53 @@ with open(args.skosfile, 'r') as incoming_skos:
         concept.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource")
         for concept in top_concepts]
 
-    thesaurus_skos = prepare_export(namespaces, concepts).serialize(format='pretty-xml')
-
     for concept in concepts:
         uri = concept.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
         if uri in top_concept_uris:
-            # create a new top level Collection to hold the concepts
+            # create a new top level Collection based on the topConcept
             collection = etree.Element(
                 "{http://www.w3.org/2004/02/skos/core#}Collection",
                 nsmap=namespaces)
-            # Copy the TopConcept's attributes to it
-            [collection.set(attr[0], attr[1]) for attr in concept.attrib.items()]
 
-            # Change skos:narrower into valid skos:member tags in the Concept's children
+            # migrate nested concepts and attributes into new
+            # Collection
+            #################################################
 
-            for narrower in concept.xpath("skos:narrower", namespaces=namespaces):
+            # hacky-deepcopy the TopConcept to avoid mutating original
+            # (still needed for thesaurus export)
+            working_concept = etree.fromstring(etree.tostring(concept))
+
+            # give the collection a UUID based on the prefLabel
+            col_uuid = new_or_existing_uuid(
+                working_concept.find('./skos:prefLabel',
+                                     namespaces=namespaces))
+            fq_uuid = namespaces['arches'] + col_uuid
+            collection.set("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about",
+                           fq_uuid)
+
+            # change skos:narrower into valid skos:member tags in the
+            # Concept's first-level children
+            for narrower in working_concept.xpath("skos:narrower",
+                                                  namespaces=namespaces):
                 narrower.tag = "{http://www.w3.org/2004/02/skos/core#}member"
 
             # Append the child concepts to the new Collection
-            [collection.append(child) for child in concept.getchildren()]
+            [collection.append(child) for child in
+             working_concept.getchildren()]
 
             collections.append(collection)
 
     # prepare raw XML
+    thesaurus_skos = prepare_export(namespaces,
+                                    concepts).serialize(format='pretty-xml')
+    collections_skos = prepare_export(namespaces,
+                                      collections).serialize(format='pretty-xml')
 
-    collections_skos = prepare_export(namespaces, collections).serialize(format='pretty-xml')
-
+    # export files
     export('thesaurus.xml', thesaurus_skos)
-
     export('collections.xml', collections_skos)
+
+    # write UUID's
+    with open(uuid_file, 'w') as uuid_store:
+        uuid_store.write(json.dumps(uuids, indent=4, sort_keys=True))
+        uuid_store.close()
