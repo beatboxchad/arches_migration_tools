@@ -71,9 +71,10 @@ with open(args.skosfile, 'r') as incoming_skos:
 
     def new_or_existing_uuid(preflabel):
         """
-        take a topConcept's prefLabel node, parse the JSON within, and
-        return a new or existing UUID based on whether we already have
-        one for the JSON's `value` key
+        otake a topConcept's prefLabel node, parse the JSON within, and
+        return a new or existing UUID for the collection based on
+        whether we already have one for the JSON's `value` key
+
         """
         preflabel_val = json.loads(preflabel.text)['value']
 
@@ -83,6 +84,17 @@ with open(args.skosfile, 'r') as incoming_skos:
             new_uuid = str(uuid.uuid4())
             uuids[preflabel_val] = new_uuid
             return new_uuid
+
+    def new_preflabel_uuid(preflabel):
+        """
+        Concept Values in Arches have a UUID (stored in the embedded JSON)
+        and a 1-1 mapping with their Concept; if a Collection shares a
+        prefLabel with a Concept, it needs a new ID to avoid
+        clobbering the same attribute on the existing Concept
+        """
+        working = json.loads(preflabel.text)
+        working['id'] = unicode(uuid.uuid4())
+        preflabel.text = json.dumps(working)
 
     fixed_ns_raw = update_arches_namespace(incoming_skos.read())
     skos_xml = etree.fromstring(fixed_ns_raw)
@@ -114,9 +126,12 @@ with open(args.skosfile, 'r') as incoming_skos:
             working_concept = etree.fromstring(etree.tostring(concept))
 
             # give the collection a UUID based on the prefLabel
-            col_uuid = new_or_existing_uuid(
-                working_concept.find('./skos:prefLabel',
-                                     namespaces=namespaces))
+            col_preflabel = working_concept.find('./skos:prefLabel',
+                                                 namespaces=namespaces)
+
+            new_preflabel_uuid(col_preflabel)
+
+            col_uuid = new_or_existing_uuid(col_preflabel)
             fq_uuid = namespaces['arches'] + col_uuid
             collection.set("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about",
                            fq_uuid)
