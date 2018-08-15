@@ -10,6 +10,7 @@ from zipfile import ZipFile
 from fuzzywuzzy import fuzz, process
 from string import capwords
 from datetime import datetime
+from lxml import etree
 parser = argparse.ArgumentParser()
 
 parser.add_argument("v3_json")
@@ -29,8 +30,7 @@ class DTFixer:
             comma or contain HTML tags (as in the case strings
             display/collected with the rich text editor widget).
             """
-            if True in [x in data for x in '<' '>' ',']:
-                data = "'" + data.replace("'", "\\'") + "'"
+
             return data
 
         def fix_number(data):
@@ -66,6 +66,10 @@ class DTFixer:
             prefLabel contains a comma, then that prefLabel must have
             double-quotes: "Slate,""Shingles, original"",Thatch".
             """
+
+            return data
+
+        def fix_domain(data):
             return data
 
         self.fixers = {
@@ -73,17 +77,46 @@ class DTFixer:
             'number': fix_number,
             'date': fix_date,
             'geojson-feature-collection': fix_geojson,
-            'concept': fix_concept  # accounts for concept lists as well
+            'concept': fix_concept,  # accounts for concept lists as well
+            'domain': fix_domain
         }
 
         self.businesstable_datatypes = {
             "dates": 'date',
-            "domains": 'concept',  # FIXME account for list
             "files": 'string',
             "geometries": 'geojson-feature-collection',
-            "strings": 'string'
+            "strings": 'string',
+            "domains": 'concept'
 
         }
+
+        self.mappings = {}
+        self.p_uuids = {}
+
+        for mapping_file in os.listdir(args.mapping_dir):
+
+            with ZipFile(args.mapping_dir + mapping_file) as zip:
+                mapping = json.load(
+                    zip.open(mapping_file.replace('.zip',
+                                                  '.mapping')))
+                concepts = json.load(
+                    zip.open(mapping_file.replace('.zip',
+                                                  '_concepts.json')))
+            for ctype in concepts.items():
+
+                if str(type(ctype[1])) == "<type 'unicode'>":
+                    print(ctype[1])
+                else:
+                    for concept in ctype[1].items():
+                        self.p_uuids[concept[1]] = concept[0]
+
+            self.mappings[mapping['resource_model_name']] = mapping
+
+    def convert_v3_rname(self, resource_name):
+        return process.extractOne(
+            capwords(resource_name.split('.')[0]
+                      .replace('_', ' ')),
+            self.mappings.keys())[0]
 
     def fix_datatype(self, businesstable, data):
         dt = self.businesstable_datatypes[businesstable]
@@ -91,27 +124,13 @@ class DTFixer:
 
 
 v3_graphs = json.load(open(args.v3_json))
-mapping_files = os.listdir(args.mapping_dir)
+
 graphdiff_files = os.listdir('./resources/graphdiffs/')
 
-# load mappings
-mappings = {}
-
-for mapping_file in mapping_files:
-    mapping = json.load(ZipFile(args.mapping_dir + mapping_file)
-                        .open(mapping_file.replace('.zip', '.mapping')))
-    mappings[mapping['resource_model_name']] = mapping
-
-
-def convert_v3_rname(resource_name):
-    return process.extractOne(
-        capwords(resource_name.split('.')[0]
-                 .replace('_', ' ')),
-        mappings.keys())[0]
-
+fixer = DTFixer()
 
 # create a dictionary of v3 and their corresponding v4 resource model names
-resource_model_names = {rname: convert_v3_rname(rname)
+resource_model_names = {rname: fixer.convert_v3_rname(rname)
                         for rname in
                         set([r['entitytypeid']
                              for r in v3_graphs['resources']])}
@@ -122,7 +141,7 @@ graphdiffs = {}
 for name in resource_model_names.keys():
     with open('./resources/graphdiffs/' + process.extractOne(
             name, graphdiff_files)[0]) as graphdiff:
-        graphdiffs[convert_v3_rname(name)] = json.load(graphdiff)
+        graphdiffs[fixer.convert_v3_rname(name)] = json.load(graphdiff)
 
 v4_data = {rname: {} for rname in resource_model_names.values()}
 resource_fieldnames = {rname: ["ResourceID"]
@@ -130,7 +149,7 @@ resource_fieldnames = {rname: ["ResourceID"]
 
 
 def process_children(children, resource_name, ruuid):
-    fixer = DTFixer()
+
     # recursively process children
     for child in children:
         children = child['child_entities']
@@ -139,10 +158,7 @@ def process_children(children, resource_name, ruuid):
         if len(children) > 0:
             process_children(children, resource_name, ruuid)
 
-        if child['businesstablename'] == "domains":
-            v4_field_data = child['label']
-        else:
-            v4_field_data = child['value']
+        v4_field_data = child['value']
 
         # don't attempt to migrate semantic nodes
         if (v4_fieldname is not None and child['businesstablename'] != ""):
@@ -151,7 +167,8 @@ def process_children(children, resource_name, ruuid):
                 # fieldnames with different values may be imported
                 v4_data[resource_name][ruuid] = []
 
-            fixed_field_data = fixer.fix_datatype(child['businesstablename'], v4_field_data)
+            fixed_field_data = fixer.fix_datatype(
+                child['businesstablename'], v4_field_data)
 
             v4_data[resource_name][ruuid].append({
                 'ResourceID': ruuid,
@@ -161,7 +178,7 @@ def process_children(children, resource_name, ruuid):
 
 
 for resource in v3_graphs['resources']:
-    resource_name = convert_v3_rname(resource['entitytypeid'])
+    resource_name = fixer.convert_v3_rname(resource['entitytypeid'])
     ruuid = str(uuid.uuid4())
     process_children(resource['child_entities'], resource_name, ruuid)
 
@@ -169,9 +186,13 @@ for resource in v3_graphs['resources']:
 for resource_model in v4_data.keys():
     filename = args.output_dir + resource_model + '.csv'
     with open(filename, 'w') as csvfile:
-        fieldnames = ["ResourceID"]
-        fieldnames += [field for field in set(resource_fieldnames[resource_model])]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        fieldnames = [field for field in
+                      set(resource_fieldnames[resource_model])]
+        fieldnames.remove("ResourceID")
+        fieldnames.insert(0, "ResourceID")
+
+        writer = csv.DictWriter(csvfile,
+                                fieldnames=fieldnames)
         writer.writeheader()
         resources = v4_data[resource_model].values()
         for resource in resources:
