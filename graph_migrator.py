@@ -117,7 +117,6 @@ class DTFixer:
                                                   '_concepts.json')))
 
             for ctype in concepts.items():
-
                 if str(type(ctype[1])) == "<type 'unicode'>":
                     print(ctype[1])
                 else:
@@ -188,90 +187,118 @@ def get_logger(level='info'):
         logger.setLevel(logging.INFO)
 
     return logger
-        
-def get_v3_data(json_file_path):
-    with open(json_file_path, 'rb') as opendata:
-        v3_graphs = json.load(opendata)
     
-    logger.info('v3 business data loaded')
-    logger.debug(str(len(v3_graphs['resources'])) + ' resources')
+class Migrator:
     
-    return v3_graphs
+    def __init__(self,v3_json_file=''):
         
-if args.verbose:
-    logger = get_logger('debug')
-else:
-    logger = get_logger()
+        self.v3_json_file = v3_json_file
+        self.v3_json = self.parse_v3_json(self.v3_json_file)
+        self.fixer = DTFixer()
+        
+        self.v4_data = {}
+        self.resource_fieldnames = {}
 
-v3_graphs = get_v3_data(args.v3_data)
+    def parse_v3_json(self,json_file_path):
+        if json_file_path == "":
+            return ""
+        with open(json_file_path, 'rb') as opendata:
+            v3_data = json.load(opendata)
+            
+        v3_sorted = {}
+        for r in v3_data['resources']:
+            if not r['entitytypeid'] in v3_sorted.keys():
+                v3_sorted[r['entitytypeid']] = [r]
+            else:
+                v3_sorted[r['entitytypeid']].append(r)
 
-fixer = DTFixer()
+        logger.info('v3 business data loaded')
+        logger.debug(str(len(v3_data['resources'])) + ' resources')
+        
+        return v3_sorted
 
-# create a dictionary of v3 and their corresponding v4 resource model names
-resource_model_names = {rname: fixer.convert_v3_rname(rname)
-                        for rname in
-                        set([r['entitytypeid']
-                             for r in v3_graphs['resources']])}
+    def process_children(self, children, resource_name, ruuid):
+        # recursively process children
+        for child in children:
+            children = child['child_entities']
 
+            v4_field_name = self.fixer.get_v4_fieldname(resource_name,
+                                                   child['entitytypeid'])
 
-v4_data = {rname: {} for rname in resource_model_names.values()}
-resource_fieldnames = {rname: ["ResourceID"]
-                       for rname in resource_model_names.values()}
+            if len(children) > 0:
 
+                self.process_children(children, resource_name, ruuid)
 
-def process_children(children, resource_name, ruuid):
-    # recursively process children
-    for child in children:
-        children = child['child_entities']
+            v4_field_data = child['value']
+            if v4_field_data == '94d3bc4e-a4b6-492d-bf7e-a62e4a077c9d':
+                v4_field_data = 'e4be3321-a3e5-42f3-b397-93fcb1401342'
 
-        v4_field_name = fixer.get_v4_fieldname(resource_name,
-                                               child['entitytypeid'])
+            fixed_field_data = self.fixer.fix_datatype(resource_name,
+                                                  v4_field_name,
+                                                  v4_field_data)
 
-        if len(children) > 0:
+            # don't attempt to migrate semantic nodes
+            if (v4_field_name is not None and child['businesstablename'] != ""):
+                if ruuid not in self.v4_data[resource_name]:
+                    # an array of dictionaries so that duplicate
+                    # fieldnames with different values may be imported
+                    self.v4_data[resource_name][ruuid] = []
 
-            process_children(children, resource_name, ruuid)
+                self.v4_data[resource_name][ruuid].append({
+                    'ResourceID': ruuid,
+                    v4_field_name: fixed_field_data})
 
-        v4_field_data = child['value']
-        if v4_field_data == '94d3bc4e-a4b6-492d-bf7e-a62e4a077c9d':
-            v4_field_data = 'e4be3321-a3e5-42f3-b397-93fcb1401342'
+                self.resource_fieldnames[resource_name].append(v4_field_name)
 
-        fixed_field_data = fixer.fix_datatype(resource_name,
-                                              v4_field_name,
-                                              v4_field_data)
+    def migrate_data(self,outdir='',mapping_dir=''):
 
-        # don't attempt to migrate semantic nodes
-        if (v4_field_name is not None and child['businesstablename'] != ""):
-            if ruuid not in v4_data[resource_name]:
-                # an array of dictionaries so that duplicate
-                # fieldnames with different values may be imported
-                v4_data[resource_name][ruuid] = []
+        # create a dictionary of v3 and their corresponding v4 resource model names
+        resource_model_names = {rname: self.fixer.convert_v3_rname(rname)
+                                for rname in self.v3_json.keys()}
 
-            v4_data[resource_name][ruuid].append({
-                'ResourceID': ruuid,
-                v4_field_name: fixed_field_data})
+        self.resource_fieldnames = {rname: ["ResourceID"]
+                               for rname in resource_model_names.values()}
 
-            resource_fieldnames[resource_name].append(v4_field_name)
+        for resource_type,resources in self.v3_json.iteritems():
 
+            rm_name = resource_model_names[resource_type]
+            self.v4_data[rm_name] = {}
+            
+            logger.info("processing {} resources ({})".format(
+                resource_type,len(resources)))
+            for resource in resources:
 
-for resource in v3_graphs['resources']:
-    resource_name = fixer.convert_v3_rname(resource['entitytypeid'])
-    ruuid = resource['entityid']
-    process_children(resource['child_entities'], resource_name, ruuid)
+                ruuid = resource['entityid']
+                self.process_children(resource['child_entities'], rm_name, ruuid)
+            logger.info("{} resources processed".format(len(self.v4_data[rm_name])))
+            filename = os.path.join(outdir, rm_name + '.csv')
+            logger.debug("writing...".format(filename))
+            with open(filename, 'w') as csvfile:
+                fieldnames = [field for field in
+                              set(self.resource_fieldnames[rm_name])]
+                fieldnames.remove("ResourceID")
+                fieldnames.insert(0, "ResourceID")
 
+                writer = csv.DictWriter(csvfile,
+                                        fieldnames=fieldnames)
+                writer.writeheader()
+                for resource in self.v4_data[rm_name].values():
+                    for row in resource:
+                        writer.writerow({k: v.encode('utf8') for k, v in row.items()})
+            del self.v4_data[rm_name]
+            logger.info("written to {}".format(filename))
 
-for resource_model in v4_data.items():
-    filename = os.path.join(args.output, resource_model[0] + '.csv')
-    with open(filename, 'w') as csvfile:
-        fieldnames = [field for field in
-                      set(resource_fieldnames[resource_model[0]])]
-        fieldnames.remove("ResourceID")
-        fieldnames.insert(0, "ResourceID")
+if __name__ == "__main__":
 
-        writer = csv.DictWriter(csvfile,
-                                fieldnames=fieldnames)
-        writer.writeheader()
-        for resource in resource_model[1].items():
-            #resource[1].append({"ResourceID": resource[0]})
-
-            for row in resource[1]:
-                writer.writerow({k: v.encode('utf8') for k, v in row.items()})
+    if args.verbose:
+        lvl = "debug"
+    else:
+        lvl = "info"
+        
+    logger = get_logger(lvl)
+        
+    migrator = Migrator(v3_json_file=args.v3_data)
+    migrator.migrate_data(
+        outdir=args.output,
+        mapping_dir=args.mappings,
+    )
