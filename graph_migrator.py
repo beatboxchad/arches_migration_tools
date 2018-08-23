@@ -4,6 +4,7 @@ import csv
 import json
 import argparse
 import os
+import logging
 
 from zipfile import ZipFile
 from fuzzywuzzy import process
@@ -17,9 +18,10 @@ parser.add_argument("-o", "--output",
                     help="The directory to output CSV and mapping files")
 parser.add_argument("-m", "--mappings",
                     help="The directory your .mapping zip files are in")
+parser.add_argument("-v", "--verbose", action="store_true",
+                    help="Turns on debug logging and prints to console")
 
 args = parser.parse_args()
-
 
 class DTFixer:
     def __init__(self):
@@ -165,11 +167,43 @@ class DTFixer:
     def fix_datatype(self, resource_name, field_name, data):
         dt = self.names_n_dts[resource_name][field_name]
         return self.fixers[dt](data)
+        
+def get_logger(level='info'):
 
+    logFormatter = logging.Formatter("%(asctime)s [%(levelname)s]  %(message)s",
+        datefmt='%m-%d-%y %H:%M:%S')
+    logger = logging.getLogger()
+    
 
-with open(args.v3_data, 'rb') as opendata:
-    v3_graphs = json.load(opendata)
+    fileHandler = logging.FileHandler("{0}/{1}.log".format('logs', 'business_data_conversion'))
+    fileHandler.setFormatter(logFormatter)
+    logger.addHandler(fileHandler)
 
+    if level == "debug":
+        consoleHandler = logging.StreamHandler()
+        consoleHandler.setFormatter(logFormatter)
+        logger.addHandler(consoleHandler)
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+
+    return logger
+        
+def get_v3_data(json_file_path):
+    with open(json_file_path, 'rb') as opendata:
+        v3_graphs = json.load(opendata)
+    
+    logger.info('v3 business data loaded')
+    logger.debug(str(len(v3_graphs['resources'])) + ' resources')
+    
+    return v3_graphs
+        
+if args.verbose:
+    logger = get_logger('debug')
+else:
+    logger = get_logger()
+
+v3_graphs = get_v3_data(args.v3_data)
 
 fixer = DTFixer()
 
