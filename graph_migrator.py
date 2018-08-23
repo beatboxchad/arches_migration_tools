@@ -29,7 +29,7 @@ class DTFixer:
             comma or contain HTML tags (as in the case strings
             display/collected with the rich text editor widget).
             """
-            return '"""' + data + '"""'
+            return "'" + data + "'"
 
         def fix_number(data):
             """number - Numbers don’t need quotes.
@@ -42,6 +42,8 @@ class DTFixer:
             quotes.
             """
             # This is brittle, developed for one specific installation
+            if data == '':
+                return data
             return datetime.strptime(data,
                                      "%Y-%m-%dT%H:%M:%S").date().isoformat()
 
@@ -197,6 +199,8 @@ def process_children(children, resource_name, ruuid):
             process_children(children, resource_name, ruuid)
 
         v4_field_data = child['value']
+        if v4_field_data == '94d3bc4e-a4b6-492d-bf7e-a62e4a077c9d':
+            v4_field_data = 'e4be3321-a3e5-42f3-b397-93fcb1401342'
 
         fixed_field_data = fixer.fix_datatype(resource_name,
                                               v4_field_name,
@@ -234,7 +238,7 @@ for resource_model in v4_data.items():
                                 fieldnames=fieldnames)
         writer.writeheader()
         for resource in resource_model[1].items():
-            resource[1].append({"ResourceID": resource[0]})
+            #resource[1].append({"ResourceID": resource[0]})
 
             for row in resource[1]:
                 writer.writerow({k: v.encode('utf8') for k, v in row.items()})
