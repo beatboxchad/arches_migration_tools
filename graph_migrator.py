@@ -102,7 +102,7 @@ class DTFixer:
 
         # load mappings
         for mapping_file in os.listdir(args.mappings):
-            with ZipFile(args.mappings + mapping_file) as zip:
+            with ZipFile(os.path.join(args.mappings,mapping_file)) as zip:
                 mapping = json.load(
                     zip.open(mapping_file.replace('.zip',
                                                   '.mapping')))
@@ -136,11 +136,9 @@ class DTFixer:
         # This is a little messy, but I don't wanna manually unzip the
         # mapfiles and I've got 'em in memory anyway. So go ahead and
         # write out the mapping file JSON for easy import
-            json.dump(mapping,
-                      open(args.output +
-                           mapping['resource_model_name'] +
-                           '.mapping', 'w'),
-                      indent=4, sort_keys=True)
+            writeout_path = os.path.join(args.output,resource_name+'.mapping')
+            with open(writeout_path,'w') as outfile:
+                json.dump(mapping, outfile, indent=4, sort_keys=True)
 
     def convert_v3_rname(self, resource_name):
         return process.extractOne(
@@ -169,7 +167,8 @@ class DTFixer:
         return self.fixers[dt](data)
 
 
-v3_graphs = json.load(open(args.v3_data))
+with open(args.v3_data, 'rb') as opendata:
+    v3_graphs = json.load(opendata)
 
 
 fixer = DTFixer()
@@ -227,7 +226,7 @@ for resource in v3_graphs['resources']:
 
 
 for resource_model in v4_data.items():
-    filename = args.output + resource_model[0] + '.csv'
+    filename = os.path.join(args.output, resource_model[0] + '.csv')
     with open(filename, 'w') as csvfile:
         fieldnames = [field for field in
                       set(resource_fieldnames[resource_model[0]])]
