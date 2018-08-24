@@ -179,28 +179,7 @@ class DTFixer:
     def fix_datatype(self, resource_name, field_name, data):
         dt = self.names_n_dts[resource_name][field_name]
         return self.fixers[dt](data)
-        
-def get_logger(level='info'):
 
-    logFormatter = logging.Formatter(u"%(asctime)s [%(levelname)s]  %(message)s",
-        datefmt='%m-%d-%y %H:%M:%S')
-    logger = logging.getLogger()
-    
-
-    fileHandler = logging.FileHandler("{0}/{1}.log".format('logs', 'business_data_conversion'))
-    fileHandler.setFormatter(logFormatter)
-    logger.addHandler(fileHandler)
-
-    if level == "debug":
-        consoleHandler = logging.StreamHandler()
-        consoleHandler.setFormatter(logFormatter)
-        logger.addHandler(consoleHandler)
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
-
-    return logger
-    
 class Migrator:
     
     def __init__(self,v3_json_file,mappings_dir,output_dir):
@@ -344,6 +323,28 @@ class Migrator:
             del self.v4_data[rm_name]
 
             logger.info("written to {}".format(filename))
+
+        
+def get_logger(level='info'):
+
+    logFormatter = logging.Formatter(u"%(asctime)s [%(levelname)s]  %(message)s",
+        datefmt='%m-%d-%y %H:%M:%S')
+    logger = logging.getLogger()
+    
+
+    fileHandler = logging.FileHandler("{0}/{1}.log".format('logs', 'business_data_conversion'))
+    fileHandler.setFormatter(logFormatter)
+    logger.addHandler(fileHandler)
+
+    if level == "debug":
+        consoleHandler = logging.StreamHandler()
+        consoleHandler.setFormatter(logFormatter)
+        logger.addHandler(consoleHandler)
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+
+    return logger
 
 if __name__ == "__main__":
 
