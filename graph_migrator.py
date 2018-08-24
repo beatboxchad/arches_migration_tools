@@ -225,9 +225,6 @@ class Migrator:
                 continue
 
             v4_field_data = child['value']
-            if v4_field_data == '94d3bc4e-a4b6-492d-bf7e-a62e4a077c9d':
-                v4_field_data = 'e4be3321-a3e5-42f3-b397-93fcb1401342'
-
             fixed_field_data = self.fixer.fix_datatype(resource_name,
                                                   v4_field_name,
                                                   v4_field_data)
