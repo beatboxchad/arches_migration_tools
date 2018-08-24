@@ -24,7 +24,7 @@ parser.add_argument("-v", "--verbose", action="store_true",
 args = parser.parse_args()
 
 class DTFixer:
-    def __init__(self):
+    def __init__(self,mappings_dir,output_dir):
 
         def fix_string(data):
             """string - Strings need not be single-quoted unless they contain a
@@ -139,7 +139,9 @@ class DTFixer:
         # This is a little messy, but I don't wanna manually unzip the
         # mapfiles and I've got 'em in memory anyway. So go ahead and
         # write out the mapping file JSON for easy import
-            writeout_path = os.path.join(args.output,resource_name+'.mapping')
+        ## It would be good to further refactor this so that the output dir
+        ## does not need to be passed to this class.
+            writeout_path = os.path.join(output_dir,resource_name+'.mapping')
             with open(writeout_path,'w') as outfile:
                 json.dump(mapping, outfile, indent=4, sort_keys=True)
 
@@ -192,18 +194,18 @@ def get_logger(level='info'):
     
 class Migrator:
     
-    def __init__(self,v3_json_file=''):
+    def __init__(self,v3_json_file,mappings_dir,output_dir):
         
         self.v3_json_file = v3_json_file
         self.v3_json = self.parse_v3_json(self.v3_json_file)
-        self.fixer = DTFixer()
+        self.fixer = DTFixer(mappings_dir,output_dir)
+        self.output_dir = output_dir
+        self.mappings_dir = mappings_dir
         
         self.v4_data = {}
         self.resource_fieldnames = {}
 
     def parse_v3_json(self,json_file_path):
-        if json_file_path == "":
-            return ""
         with open(json_file_path, 'rb') as opendata:
             v3_data = json.load(opendata)
             
@@ -273,9 +275,10 @@ class Migrator:
                 ruuid = resource['entityid']
                 self.process_children(resource['child_entities'], rm_name, ruuid)
             logger.info("{} resources processed".format(len(self.v4_data[rm_name])))
-            filename = os.path.join(outdir, rm_name + '.csv')
+            filename = os.path.join(self.output_dir, rm_name + '.csv')
             logger.debug("writing...".format(filename))
-            with open(filename, 'w') as csvfile:
+
+            with open(filename, 'wb') as csvfile:
                 fieldnames = [field for field in
                               set(self.resource_fieldnames[rm_name])]
                 fieldnames.remove("ResourceID")
@@ -298,9 +301,9 @@ if __name__ == "__main__":
         lvl = "info"
         
     logger = get_logger(lvl)
-        
-    migrator = Migrator(v3_json_file=args.v3_data)
-    migrator.migrate_data(
-        outdir=args.output,
-        mapping_dir=args.mappings,
-    )
+    
+    ## it would be better to not have to instantiate the migrator calss with
+    ## the output directory, but right now it is necessary because that dir
+    ## should be passed to DTFixer when it is instantiated.
+    migrator = Migrator(args.v3_data,args.mappings,args.output)
+    migrator.migrate_data()
