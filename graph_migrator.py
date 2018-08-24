@@ -159,6 +159,10 @@ class DTFixer:
         mapping_fieldnames = [node['arches_node_name'] for node in
                               self.mappings[resource_name]['nodes']]
 
+        # avoids possible key errors below
+        if not field_name in self.graphdiffs[resource_name]:
+            return None
+
         if self.graphdiffs[resource_name][field_name] is None:
             return process.extractOne(capwords(field_name
                                                .split('.')[0]
@@ -234,6 +238,9 @@ class Migrator:
             if len(children) > 0:
 
                 self.process_children(children, resource_name, ruuid)
+                
+            if v4_field_name is None:
+                continue
 
             v4_field_data = child['value']
             if v4_field_data == '94d3bc4e-a4b6-492d-bf7e-a62e4a077c9d':
