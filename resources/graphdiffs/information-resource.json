@@ -44,7 +44,7 @@
   "PUBLISHER.E39" : "Publisher",
   "DESCRIPTION_TYPE_AUTHORITY_DOCUMENT.E32" : null,
   "DATE_OF_UPDATE.E50" : "Date of Creation",
-  "FILE_PATH.E62" : "Place Description",
+  "FILE_PATH.E62" : "Information Carrier",
   "RESOURCE_UPDATE_EVENT.E65" : "Resource Creation Event",
   "SPATIAL_COVERAGE.E53" : "Administration Subdivision",
   "EXTERNAL_XREF.E42" : "External XRef",
