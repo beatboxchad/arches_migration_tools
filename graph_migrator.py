@@ -103,8 +103,10 @@ class DTFixer:
         self.names_n_dts = {}
 
         # load mappings
-        for mapping_file in os.listdir(args.mappings):
-            with ZipFile(os.path.join(args.mappings,mapping_file)) as zip:
+        for mapping_file in os.listdir(mappings_dir):
+            if not mapping_file.endswith(".zip"):
+                continue
+            with ZipFile(os.path.join(mappings_dir,mapping_file)) as zip:
                 mapping = json.load(
                     zip.open(mapping_file.replace('.zip',
                                                   '.mapping')))
