@@ -262,8 +262,38 @@ class Migrator:
                     v4_field_name: fixed_field_data})
 
                 self.resource_fieldnames[resource_name].append(v4_field_name)
+                
+    def create_resource_rows(self,resource):
+        """condenses the input resource data into a set of rows that can be
+        written to the csv."""
+
+        outrows = []
+
+        while len(resource) > 0:
+            logger.debug("-"*80)
+            newrow = {}
+            added = []
+
+            for index,row in enumerate(resource):
+                for node_name, value in row.iteritems():
+                    if not node_name in newrow.keys():
+                        added.append(index)
+                        # logger.debug("adding {} to new row".format(node_name))
+                        newrow[node_name] = value
+
+                        ## encode to ascii only for logging
+                        v = value.encode('ascii','ignore')
+                        if len(v) > 50:
+                            v = v[:50]
+                        logger.debug("{}: {}".format(node_name, v))
+
+            outrows.append(newrow)
+
+            ## strip out nodes that were just added and run the loop again
+            resource = [v for i,v in enumerate(resource) if not i in added]
 
     def migrate_data(self,outdir='',mapping_dir=''):
+        return outrows
 
         # create a dictionary of v3 and their corresponding v4 resource model names
         resource_model_names = {rname: self.fixer.convert_v3_rname(rname)
@@ -297,7 +327,8 @@ class Migrator:
                                         fieldnames=fieldnames)
                 writer.writeheader()
                 for resource in self.v4_data[rm_name].values():
-                    for row in resource:
+                    rows = self.create_resource_rows(resource)
+                    for row in rows:
                         writer.writerow({k: v.encode('utf8') for k, v in row.items()})
             del self.v4_data[rm_name]
             logger.info("written to {}".format(filename))
