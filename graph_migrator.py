@@ -31,12 +31,14 @@ class DTFixer:
             comma or contain HTML tags (as in the case strings
             display/collected with the rich text editor widget).
             """
-            return "'" + data + "'"
+            ## don't manually quote strings for now.
+            return data
 
         def fix_number(data):
             """number - Numbers don’t need quotes.
             """
-            return data
+            output = str(data).replace(",","")
+            return output
 
         def fix_date(data):
             """date - All dates must be formatted as YYYY-MM-DD. Dates that are
