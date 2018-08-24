@@ -179,7 +179,7 @@ class DTFixer:
         
 def get_logger(level='info'):
 
-    logFormatter = logging.Formatter("%(asctime)s [%(levelname)s]  %(message)s",
+    logFormatter = logging.Formatter(u"%(asctime)s [%(levelname)s]  %(message)s",
         datefmt='%m-%d-%y %H:%M:%S')
     logger = logging.getLogger()
     
@@ -292,8 +292,9 @@ class Migrator:
             ## strip out nodes that were just added and run the loop again
             resource = [v for i,v in enumerate(resource) if not i in added]
 
-    def migrate_data(self,outdir='',mapping_dir=''):
         return outrows
+
+    def migrate_data(self):
 
         # create a dictionary of v3 and their corresponding v4 resource model names
         resource_model_names = {rname: self.fixer.convert_v3_rname(rname)
@@ -305,8 +306,13 @@ class Migrator:
         for resource_type,resources in self.v3_json.iteritems():
 
             rm_name = resource_model_names[resource_type]
-            self.v4_data[rm_name] = {}
             
+            ## easy way to only process one type of resource
+            # if rm_name != "Activity":
+                # continue
+                
+            self.v4_data[rm_name] = {}
+
             logger.info("processing {} resources ({})".format(
                 resource_type,len(resources)))
             for resource in resources:
@@ -330,7 +336,11 @@ class Migrator:
                     rows = self.create_resource_rows(resource)
                     for row in rows:
                         writer.writerow({k: v.encode('utf8') for k, v in row.items()})
+
+            ## this line could be commented out if it's desirable to have the entire
+            ## v4_data object persist. currently, memory cleanup is prioritized.
             del self.v4_data[rm_name]
+
             logger.info("written to {}".format(filename))
 
 if __name__ == "__main__":
