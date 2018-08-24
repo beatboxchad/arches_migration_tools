@@ -20,6 +20,9 @@ parser.add_argument("-m", "--mappings",
                     help="The directory your .mapping zip files are in")
 parser.add_argument("-v", "--verbose", action="store_true",
                     help="Turns on debug logging and prints to console")
+parser.add_argument("--process-model", default="<all>",
+                    help="Allows you to pass the name of a single resource "\
+                    "model to process")
 
 args = parser.parse_args()
 
@@ -294,7 +297,7 @@ class Migrator:
 
         return outrows
 
-    def migrate_data(self):
+    def migrate_data(self, process_model='<all>'):
 
         # create a dictionary of v3 and their corresponding v4 resource model names
         resource_model_names = {rname: self.fixer.convert_v3_rname(rname)
@@ -307,9 +310,8 @@ class Migrator:
 
             rm_name = resource_model_names[resource_type]
             
-            ## easy way to only process one type of resource
-            # if rm_name != "Activity":
-                # continue
+            if process_model != rm_name and process_model != '<all>':
+                continue
                 
             self.v4_data[rm_name] = {}
 
@@ -356,4 +358,4 @@ if __name__ == "__main__":
     ## the output directory, but right now it is necessary because that dir
     ## should be passed to DTFixer when it is instantiated.
     migrator = Migrator(args.v3_data,args.mappings,args.output)
-    migrator.migrate_data()
+    migrator.migrate_data(process_model=args.process_model)
