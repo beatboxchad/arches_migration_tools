@@ -89,6 +89,13 @@ class DTFixer:
             if len(split_data) > 1:
                 return "'{}'".format(data)
             return data
+            
+        def fix_filepath(data):
+            """
+            file paths may need to be modified upon upload
+            """
+            data = data.split('/')
+            return data[-1]
 
         self.fixers = {
             'string': fix_string,
@@ -99,7 +106,7 @@ class DTFixer:
             'concept-list': fix_list,
             'domain-value': fix_concept,
             'domain-value-list': fix_list,
-            'file-list': fix_list
+            'file-list': fix_filepath
         }
 
         self.mappings = {}
