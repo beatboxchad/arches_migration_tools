@@ -21,26 +21,27 @@ parser.add_argument("-m", "--mappings",
 parser.add_argument("-v", "--verbose", action="store_true",
                     help="Turns on debug logging and prints to console")
 parser.add_argument("--process-model", default="<all>",
-                    help="Allows you to pass the name of a single resource "\
+                    help="Allows you to pass the name of a single resource "
                     "model to process")
 
 args = parser.parse_args()
 
+
 class DTFixer:
-    def __init__(self,mappings_dir,output_dir):
+    def __init__(self, mappings_dir, output_dir):
 
         def fix_string(data):
             """string - Strings need not be single-quoted unless they contain a
             comma or contain HTML tags (as in the case strings
             display/collected with the rich text editor widget).
             """
-            ## don't manually quote strings for now.
+            # don't manually quote strings for now.
             return data
 
         def fix_number(data):
             """number - Numbers don’t need quotes.
             """
-            output = str(data).replace(",","")
+            output = str(data).replace(",", "")
             return output
 
         def fix_date(data):
@@ -89,7 +90,7 @@ class DTFixer:
             if len(split_data) > 1:
                 return "'{}'".format(data)
             return data
-            
+
         def fix_filepath(data):
             """
             file paths may need to be modified upon upload
@@ -118,7 +119,7 @@ class DTFixer:
         for mapping_file in os.listdir(mappings_dir):
             if not mapping_file.endswith(".zip"):
                 continue
-            with ZipFile(os.path.join(mappings_dir,mapping_file)) as zip:
+            with ZipFile(os.path.join(mappings_dir, mapping_file)) as zip:
                 mapping = json.load(
                     zip.open(mapping_file.replace('.zip',
                                                   '.mapping')))
@@ -151,10 +152,10 @@ class DTFixer:
         # This is a little messy, but I don't wanna manually unzip the
         # mapfiles and I've got 'em in memory anyway. So go ahead and
         # write out the mapping file JSON for easy import
-        ## It would be good to further refactor this so that the output dir
-        ## does not need to be passed to this class.
-            writeout_path = os.path.join(output_dir,resource_name+'.mapping')
-            with open(writeout_path,'w') as outfile:
+        # It would be good to further refactor this so that the output dir
+        # does not need to be passed to this class.
+            writeout_path = os.path.join(output_dir, resource_name+'.mapping')
+            with open(writeout_path, 'w') as outfile:
                 json.dump(mapping, outfile, indent=4, sort_keys=True)
 
     def convert_v3_rname(self, resource_name):
@@ -187,23 +188,24 @@ class DTFixer:
         dt = self.names_n_dts[resource_name][field_name]
         return self.fixers[dt](data)
 
+
 class Migrator:
-    
-    def __init__(self,v3_json_file,mappings_dir,output_dir):
-        
+
+    def __init__(self, v3_json_file, mappings_dir, output_dir):
+
         self.v3_json_file = v3_json_file
         self.v3_json = self.parse_v3_json(self.v3_json_file)
-        self.fixer = DTFixer(mappings_dir,output_dir)
+        self.fixer = DTFixer(mappings_dir, output_dir)
         self.output_dir = output_dir
         self.mappings_dir = mappings_dir
-        
+
         self.v4_data = {}
         self.resource_fieldnames = {}
 
-    def parse_v3_json(self,json_file_path):
+    def parse_v3_json(self, json_file_path):
         with open(json_file_path, 'rb') as opendata:
             v3_data = json.load(opendata)
-            
+
         v3_sorted = {}
         for r in v3_data['resources']:
             if not r['entitytypeid'] in v3_sorted.keys():
@@ -213,7 +215,7 @@ class Migrator:
 
         logger.info('v3 business data loaded')
         logger.debug(str(len(v3_data['resources'])) + ' resources')
-        
+
         return v3_sorted
 
     def process_children(self, children, resource_name, ruuid):
@@ -222,19 +224,19 @@ class Migrator:
             children = child['child_entities']
 
             v4_field_name = self.fixer.get_v4_fieldname(resource_name,
-                                                   child['entitytypeid'])
+                                                        child['entitytypeid'])
 
             if len(children) > 0:
 
                 self.process_children(children, resource_name, ruuid)
-                
+
             if v4_field_name is None:
                 continue
 
             v4_field_data = child['value']
             fixed_field_data = self.fixer.fix_datatype(resource_name,
-                                                  v4_field_name,
-                                                  v4_field_data)
+                                                       v4_field_name,
+                                                       v4_field_data)
 
             # don't attempt to migrate semantic nodes
             if (v4_field_name is not None and child['businesstablename'] != ""):
@@ -248,8 +250,8 @@ class Migrator:
                     v4_field_name: fixed_field_data})
 
                 self.resource_fieldnames[resource_name].append(v4_field_name)
-                
-    def create_resource_rows(self,resource):
+
+    def create_resource_rows(self, resource):
         """condenses the input resource data into a set of rows that can be
         written to the csv."""
 
@@ -260,23 +262,23 @@ class Migrator:
             newrow = {}
             added = []
 
-            for index,row in enumerate(resource):
+            for index, row in enumerate(resource):
                 for node_name, value in row.iteritems():
                     if not node_name in newrow.keys():
                         added.append(index)
                         # logger.debug("adding {} to new row".format(node_name))
                         newrow[node_name] = value
 
-                        ## encode to ascii only for logging
-                        v = value.encode('ascii','ignore')
+                        # encode to ascii only for logging
+                        v = value.encode('ascii', 'ignore')
                         if len(v) > 50:
                             v = v[:50]
                         logger.debug("{}: {}".format(node_name, v))
 
             outrows.append(newrow)
 
-            ## strip out nodes that were just added and run the loop again
-            resource = [v for i,v in enumerate(resource) if not i in added]
+            # strip out nodes that were just added and run the loop again
+            resource = [v for i, v in enumerate(resource) if not i in added]
 
         return outrows
 
@@ -287,19 +289,19 @@ class Migrator:
                                 for rname in self.v3_json.keys()}
 
         self.resource_fieldnames = {rname: ["ResourceID"]
-                               for rname in resource_model_names.values()}
+                                    for rname in resource_model_names.values()}
 
-        for resource_type,resources in self.v3_json.iteritems():
+        for resource_type, resources in self.v3_json.iteritems():
 
             rm_name = resource_model_names[resource_type]
-            
+
             if process_model != rm_name and process_model != '<all>':
                 continue
-                
+
             self.v4_data[rm_name] = {}
 
             logger.info("processing {} resources ({})".format(
-                resource_type,len(resources)))
+                resource_type, len(resources)))
             for resource in resources:
 
                 ruuid = resource['entityid']
@@ -322,19 +324,18 @@ class Migrator:
                     for row in rows:
                         writer.writerow({k: v.encode('utf8') for k, v in row.items()})
 
-            ## this line could be commented out if it's desirable to have the entire
-            ## v4_data object persist. currently, memory cleanup is prioritized.
+            # this line could be commented out if it's desirable to have the entire
+            # v4_data object persist. currently, memory cleanup is prioritized.
             del self.v4_data[rm_name]
 
             logger.info("written to {}".format(filename))
 
-        
+
 def get_logger(level='info'):
 
     logFormatter = logging.Formatter(u"%(asctime)s [%(levelname)s]  %(message)s",
-        datefmt='%m-%d-%y %H:%M:%S')
+                                     datefmt='%m-%d-%y %H:%M:%S')
     logger = logging.getLogger()
-    
 
     fileHandler = logging.FileHandler("{0}/{1}.log".format('logs', 'business_data_conversion'))
     fileHandler.setFormatter(logFormatter)
@@ -350,17 +351,18 @@ def get_logger(level='info'):
 
     return logger
 
+
 if __name__ == "__main__":
 
     if args.verbose:
         lvl = "debug"
     else:
         lvl = "info"
-        
+
     logger = get_logger(lvl)
-    
-    ## it would be better to not have to instantiate the migrator calss with
-    ## the output directory, but right now it is necessary because that dir
-    ## should be passed to DTFixer when it is instantiated.
-    migrator = Migrator(args.v3_data,args.mappings,args.output)
+
+    # it would be better to not have to instantiate the migrator calss with
+    # the output directory, but right now it is necessary because that dir
+    # should be passed to DTFixer when it is instantiated.
+    migrator = Migrator(args.v3_data, args.mappings, args.output)
     migrator.migrate_data(process_model=args.process_model)
