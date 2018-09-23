@@ -87,7 +87,7 @@ class DTFixer:
             """
 
             split_data = data.split()
-            if len(split_data) > 1:
+            if len(split_data) > 0:
                 return "'{}'".format(data)
             return data
 
@@ -110,10 +110,12 @@ class DTFixer:
             'file-list': fix_filepath
         }
 
-        self.mappings = {}
-        self.p_uuids = {}
-        self.graphdiffs = {}
-        self.names_n_dts = {}
+        self._mappings = {}
+        self._output_dir = output_dir
+        self._mappings_dir = mappings_dir
+        p_uuids = {}
+        self._graphdiffs = {}
+        self._names_n_dts = {}
 
         # load mappings
         for mapping_file in os.listdir(mappings_dir):
@@ -124,7 +126,7 @@ class DTFixer:
                     zip.open(mapping_file.replace('.zip',
                                                   '.mapping')))
                 resource_name = mapping['resource_model_name']
-                self.names_n_dts[resource_name] = {node['arches_node_name']:
+                self._names_n_dts[resource_name] = {node['arches_node_name']:
                                                    node['data_type'] for node in
                                                    mapping['nodes']}
                 concepts = json.load(
@@ -136,9 +138,9 @@ class DTFixer:
                     print(ctype[1])
                 else:
                     for concept in ctype[1].items():
-                        self.p_uuids[concept[1]] = concept[0]
+                        p_uuids[concept[1]] = concept[0]
 
-            self.mappings[resource_name] = mapping
+            self._mappings[resource_name] = mapping
 
             # load graph name changes from clojure tool
             graphdiff_filename = process.extractOne(
@@ -147,7 +149,7 @@ class DTFixer:
             )[0]
 
             with open('./resources/graphdiffs/' + graphdiff_filename) as gdiff:
-                self.graphdiffs[resource_name] = json.load(gdiff)
+                self._graphdiffs[resource_name] = json.load(gdiff)
 
         # This is a little messy, but I don't wanna manually unzip the
         # mapfiles and I've got 'em in memory anyway. So go ahead and
@@ -158,46 +160,53 @@ class DTFixer:
             with open(writeout_path, 'w') as outfile:
                 json.dump(mapping, outfile, indent=4, sort_keys=True)
 
+    @property
+    def output_dir(self):
+        return self._output_dir
+
+
+    @property
+    def mappings_dir(self):
+        return self._mappings_dir
+
     def convert_v3_rname(self, resource_name):
         return process.extractOne(
             capwords(resource_name.split('.')[0]
                       .replace('_', ' ')),
-            self.mappings.keys())[0]
+            self._mappings.keys())[0]
 
     def get_v4_fieldname(self, resource_name, field_name):
         # two-tier check, look at the graphdiffs from the clojure tool
         # and look at the mapping file
         mapping_fieldnames = [node['arches_node_name'] for node in
-                              self.mappings[resource_name]['nodes']]
+                              self._mappings[resource_name]['nodes']]
 
         # avoids possible key errors below
-        if not field_name in self.graphdiffs[resource_name]:
+        if not field_name in self._graphdiffs[resource_name]:
             return None
 
-        if self.graphdiffs[resource_name][field_name] is None:
+        if self._graphdiffs[resource_name][field_name] is None:
             return process.extractOne(capwords(field_name
                                                .split('.')[0]
                                                .replace("_", " ")),
                                       mapping_fieldnames)[0]
         else:
             return process.extractOne(
-                self.graphdiffs[resource_name][field_name],
+                self._graphdiffs[resource_name][field_name],
                 mapping_fieldnames)[0]
 
     def fix_datatype(self, resource_name, field_name, data):
-        dt = self.names_n_dts[resource_name][field_name]
+        dt = self._names_n_dts[resource_name][field_name]
         return self.fixers[dt](data)
 
 
 class Migrator:
 
-    def __init__(self, v3_json_file, mappings_dir, output_dir):
+    def __init__(self, v3_json_file, fixer):
 
-        self.v3_json_file = v3_json_file
-        self.v3_json = self.parse_v3_json(self.v3_json_file)
-        self.fixer = DTFixer(mappings_dir, output_dir)
-        self.output_dir = output_dir
-        self.mappings_dir = mappings_dir
+        self.v3_json = self.parse_v3_json(v3_json_file)
+        self._output_dir = fixer.output_dir
+        self._mappings_dir = fixer.mappings_dir
 
         self.v4_data = {}
         self.resource_fieldnames = {}
@@ -223,7 +232,7 @@ class Migrator:
         for child in children:
             children = child['child_entities']
 
-            v4_field_name = self.fixer.get_v4_fieldname(resource_name,
+            v4_field_name = fixer.get_v4_fieldname(resource_name,
                                                         child['entitytypeid'])
 
             if len(children) > 0:
@@ -234,7 +243,7 @@ class Migrator:
                 continue
 
             v4_field_data = child['value']
-            fixed_field_data = self.fixer.fix_datatype(resource_name,
+            fixed_field_data = fixer.fix_datatype(resource_name,
                                                        v4_field_name,
                                                        v4_field_data)
 
@@ -285,7 +294,7 @@ class Migrator:
     def migrate_data(self, process_model='<all>'):
 
         # create a dictionary of v3 and their corresponding v4 resource model names
-        resource_model_names = {rname: self.fixer.convert_v3_rname(rname)
+        resource_model_names = {rname: fixer.convert_v3_rname(rname)
                                 for rname in self.v3_json.keys()}
 
         self.resource_fieldnames = {rname: ["ResourceID"]
@@ -307,7 +316,7 @@ class Migrator:
                 ruuid = resource['entityid']
                 self.process_children(resource['child_entities'], rm_name, ruuid)
             logger.info("{} resources processed".format(len(self.v4_data[rm_name])))
-            filename = os.path.join(self.output_dir, rm_name + '.csv')
+            filename = os.path.join(self._output_dir, rm_name + '.csv')
             logger.debug("writing...".format(filename))
 
             with open(filename, 'wb') as csvfile:
@@ -354,6 +363,7 @@ def get_logger(level='info'):
 
 if __name__ == "__main__":
 
+
     if args.verbose:
         lvl = "debug"
     else:
@@ -361,8 +371,8 @@ if __name__ == "__main__":
 
     logger = get_logger(lvl)
 
-    # it would be better to not have to instantiate the migrator calss with
-    # the output directory, but right now it is necessary because that dir
-    # should be passed to DTFixer when it is instantiated.
-    migrator = Migrator(args.v3_data, args.mappings, args.output)
+    fixer = DTFixer(args.mappings, args.output)
+
+    migrator = Migrator(args.v3_data, fixer)
+
     migrator.migrate_data(process_model=args.process_model)
