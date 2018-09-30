@@ -1,5 +1,4 @@
 # coding: utf-8
-
 import csv
 import json
 import argparse
@@ -13,8 +12,7 @@ from datetime import datetime
 
 
 class DTFixer:
-    def __init__(self, mappings_dir, output_dir):
-
+    def __init__(self):
         def fix_string(data):
             """string - Strings need not be single-quoted unless they contain a
             comma or contain HTML tags (as in the case strings
@@ -35,6 +33,7 @@ class DTFixer:
             quotes.
             """
             # This is brittle, developed for one specific installation
+
             if data == '':
                 return data
             return datetime.strptime(data,
@@ -71,10 +70,7 @@ class DTFixer:
             double-quotes: "Slate,""Shingles, original"",Thatch".
             """
 
-            split_data = data.split()
-            if len(split_data) > 0:
-                return "'{}'".format(data)
-            return data
+            return "'{}'".format(data)
 
         def fix_filepath(data):
             """
@@ -83,7 +79,7 @@ class DTFixer:
             data = data.split('/')
             return data[-1]
 
-        self.fixers = {
+        self._fixers = {
             'string': fix_string,
             'number': fix_number,
             'date': fix_date,
@@ -95,233 +91,295 @@ class DTFixer:
             'file-list': fix_filepath
         }
 
-        self._mappings = {}
-        self._output_dir = output_dir
-        self._mappings_dir = mappings_dir
-        p_uuids = {}
-        self._graphdiffs = {}
-        self._names_n_dts = {}
+    def fix_datatype(self, datatype, data):
 
-        # load mappings
-        for mapping_file in os.listdir(mappings_dir):
-            if not mapping_file.endswith(".zip"):
-                continue
-            with ZipFile(os.path.join(mappings_dir, mapping_file)) as zip:
-                mapping = json.load(
-                    zip.open(mapping_file.replace('.zip',
-                                                  '.mapping')))
-                resource_name = mapping['resource_model_name']
-                self._names_n_dts[resource_name] = {node['arches_node_name']:
-                                                    node['data_type'] for node in
-                                                    mapping['nodes']}
-                concepts = json.load(
-                    zip.open(mapping_file.replace('.zip',
-                                                  '_concepts.json')))
+        return self._fixers[datatype](data)
+
+
+class GraphDiff:
+    def __init__(self, resource_name, path):
+
+        with open(path, 'r') as gdiff:
+            self._name = resource_name
+            self._data = json.load(gdiff)
+
+    @property
+    def data(self):
+        return self._data
+
+    @property
+    def name(self):
+        return self._name
+
+
+class Mapping:
+    def __init__(self, path):
+        self._node_datatypes = {}
+        self._preflabel_uuids = {}
+#        self._logger = logging.getLogger('graph_migrator')
+        self._dir, self._filename = os.path.split(path)
+        with ZipFile(path) as mzip:
+            mapping = json.load(
+                mzip.open(self._filename.replace('.zip',
+                                                 '.mapping')))
+            self._data = mapping
+            self._resource_name = mapping['resource_model_name']
+
+            self._node_datatypes = {node['arches_node_name']:
+                                    node['data_type'] for node in
+                                    mapping['nodes']}
+            concepts = json.load(
+                mzip.open(self._filename.replace('.zip',
+                                                 '_concepts.json')))
 
             for ctype in concepts.items():
                 if str(type(ctype[1])) == "<type 'unicode'>":
-                    print(ctype[1])
+                    # self._logger.debug(ctype[1])
+                    pass
                 else:
                     for concept in ctype[1].items():
-                        p_uuids[concept[1]] = concept[0]
+                        self._preflabel_uuids[concept[1]] = concept[0]
 
-            self._mappings[resource_name] = mapping
-
-            # load graph name changes from clojure tool
-            graphdiff_filename = process.extractOne(
-                resource_name,
-                os.listdir('./resources/graphdiffs/')
-            )[0]
-
-            with open('./resources/graphdiffs/' + graphdiff_filename) as gdiff:
-                self._graphdiffs[resource_name] = json.load(gdiff)
-
-        # This is a little messy, but I don't wanna manually unzip the
-        # mapfiles and I've got 'em in memory anyway. So go ahead and
-        # write out the mapping file JSON for easy import
-        # It would be good to further refactor this so that the output dir
-        # does not need to be passed to this class.
-            writeout_path = os.path.join(output_dir, resource_name+'.mapping')
-            with open(writeout_path, 'w') as outfile:
-                json.dump(mapping, outfile, indent=4, sort_keys=True)
+        self._fieldnames = [node['arches_node_name'] for node in
+                            self.data['nodes']]
 
     @property
-    def output_dir(self):
-        return self._output_dir
+    def data(self):
+        return self._data
 
     @property
-    def mappings_dir(self):
-        return self._mappings_dir
+    def dir(self):
+        return self._dir
 
-    def convert_v3_rname(self, resource_name):
-        return process.extractOne(
-            capwords(resource_name.split('.')[0]
-                      .replace('_', ' ')),
-            self._mappings.keys())[0]
+    def write(self, output_dir):
+        writeout_path = os.path.join(output_dir,
+                                     self._resource_name+'.mapping')
+        with open(writeout_path, 'w') as outfile:
+            json.dump(self._data,
+                      outfile,
+                      indent=4,
+                      sort_keys=True)
 
-    def get_v4_fieldname(self, resource_name, field_name):
-        # two-tier check, look at the graphdiffs from the clojure tool
-        # and look at the mapping file
-        mapping_fieldnames = [node['arches_node_name'] for node in
-                              self._mappings[resource_name]['nodes']]
 
-        # avoids possible key errors below
-        if not field_name in self._graphdiffs[resource_name]:
-            return None
+class DataConverter:
+    """A DataConverter encasulates a v4 Resource Model Mapping and a
+     Legion-generated graphdiff , and provides some calculated data
+     based on these two sources to translate node names and data from
+     v3 to v4.
+    """
 
-        if self._graphdiffs[resource_name][field_name] is None:
+    def __init__(self, mapping, graphdiff):
+        self._graphdiff = graphdiff
+        self._mapping = mapping
+
+    @property
+    def mapping(self):
+        return self._mapping
+
+    @property
+    def v4_fieldnames(self):
+        return [u"ResourceID"] + self.mapping._fieldnames
+
+    @property
+    def resource_name(self):
+        return self.mapping._resource_name
+
+    @property
+    def graphdiff(self):
+        return self._graphdiff
+
+    def get_datatype(self, node_name):
+        return self.mapping._node_datatypes[node_name]
+
+    def convert_v3_fieldname(self, field_name):
+
+        if field_name in self.graphdiff.data:
+            return process.extractOne(
+                self.graphdiff.data[field_name],
+                self.v4_fieldnames)[0]
+
+            # return self.graphdiff.data[field_name]
+        else:
             return process.extractOne(capwords(field_name
                                                .split('.')[0]
                                                .replace("_", " ")),
-                                      mapping_fieldnames)[0]
-        else:
-            return process.extractOne(
-                self._graphdiffs[resource_name][field_name],
-                mapping_fieldnames)[0]
-
-    def fix_datatype(self, resource_name, field_name, data):
-        dt = self._names_n_dts[resource_name][field_name]
-        return self.fixers[dt](data)
+                                      self.mapping.v4_fieldnames)[0]
 
 
-class Migrator:
+class ResourceModelMigrator:
 
-    def __init__(self, v3_json_file, fixer):
+    # Migrates all resources in a Resource Model
 
-        self.v3_json = self.parse_v3_json(v3_json_file)
-        self._output_dir = fixer.output_dir
-        self._mappings_dir = fixer.mappings_dir
+    def __init__(self, name, converter):
 
-        self.v4_data = {}
-        self.resource_fieldnames = {}
+        self._converter = converter
+        self._resources = []
+        self._fixer = DTFixer()
 
-    def parse_v3_json(self, json_file_path):
-        with open(json_file_path, 'rb') as opendata:
-            v3_data = json.load(opendata)
+    @property
+    def v4_name(self):
+        return self.converter.resource_name
 
-        v3_sorted = {}
-        for r in v3_data['resources']:
-            if not r['entitytypeid'] in v3_sorted.keys():
-                v3_sorted[r['entitytypeid']] = [r]
-            else:
-                v3_sorted[r['entitytypeid']].append(r)
+    @property
+    def converter(self):
+        return self._converter
 
-        logger.info('v3 business data loaded')
-        logger.debug(str(len(v3_data['resources'])) + ' resources')
+    @property
+    def fixer(self):
+        return self._fixer
 
-        return v3_sorted
+    @property
+    def resources(self):
+        return self._resources
 
-    def process_children(self, children, resource_name, ruuid):
-        # recursively process children
-        for child in children:
-            children = child['child_entities']
+    def add_resource(self, resource):
+        self._resources.append(resource)
 
-            v4_field_name = fixer.get_v4_fieldname(resource_name,
-                                                   child['entitytypeid'])
-
-            if len(children) > 0:
-
-                self.process_children(children, resource_name, ruuid)
-
-            if v4_field_name is None:
-                continue
-
-            v4_field_data = child['value']
-            fixed_field_data = fixer.fix_datatype(resource_name,
-                                                  v4_field_name,
-                                                  v4_field_data)
-
-            # don't attempt to migrate semantic nodes
-            if (v4_field_name is not None and child['businesstablename'] != ""):
-                if ruuid not in self.v4_data[resource_name]:
-                    # an array of dictionaries so that duplicate
-                    # fieldnames with different values may be imported
-                    self.v4_data[resource_name][ruuid] = []
-
-                self.v4_data[resource_name][ruuid].append({
-                    'ResourceID': ruuid,
-                    v4_field_name: fixed_field_data})
-
-                self.resource_fieldnames[resource_name].append(v4_field_name)
-
-    def create_resource_rows(self, resource):
+    def get_v4_rows(self, v4_nodes, resource_id):
         """condenses the input resource data into a set of rows that can be
-        written to the csv."""
+            written to the csv."""
 
+        resource = list(v4_nodes)
         outrows = []
+        newrow = {u"ResourceID": resource_id}
 
         while len(resource) > 0:
-            logger.debug("-"*80)
-            newrow = {}
-            added = []
 
-            for index, row in enumerate(resource):
-                for node_name, value in row.iteritems():
-                    if not node_name in newrow.keys():
-                        added.append(index)
-                        # logger.debug("adding {} to new row".format(node_name))
-                        newrow[node_name] = value
+            node = resource.pop()  # This modifies in-place
+            if node[0] in newrow.keys():
+                outrows.append(newrow)
+                newrow = {u"ResourceID": resource_id,
+                          node[0]: node[1]}
 
-                        # encode to ascii only for logging
-                        v = value.encode('ascii', 'ignore')
-                        if len(v) > 50:
-                            v = v[:50]
-                        logger.debug("{}: {}".format(node_name, v))
-
-            outrows.append(newrow)
-
-            # strip out nodes that were just added and run the loop again
-            resource = [v for i, v in enumerate(resource) if not i in added]
-
+            else:
+                newrow[node[0]] = node[1]
+        outrows.append(newrow)
         return outrows
 
+    def convert_v3_rows(self, v3_nodes):
+        v4_nodes = []
+        for node in v3_nodes:
+            v4_name = self.converter.convert_v3_fieldname(node[0])
+            datatype = self.converter.get_datatype(v4_name)
+
+            v4_value = self.fixer.fix_datatype(datatype, node[1])
+
+            v4_nodes.append((v4_name, v4_value))
+        return v4_nodes
+
+    def migrate(self):
+        rows = []
+        for resource in self.resources:
+            nodes = resource.nodes
+            rows += self.get_v4_rows(self.convert_v3_rows(nodes),
+                                     resource.resource_id)
+        return rows
+
+
+class Resource:
+    # knows its data and ID
+    def __init__(self, data):
+        self._uuid = data['entityid']
+        self._v3data = [data]
+
+        def process_children(children=self._v3data, processed=[]):
+
+            for child in children:
+                grandchildren = child['child_entities']
+
+                field_name = child['entitytypeid']
+
+                if len(grandchildren) > 0:
+                    process_children(grandchildren,
+                                     processed)
+
+                field_data = child['value']
+
+                # don't attempt to migrate semantic nodes
+                if (field_name is not None and
+                        child['businesstablename'] != ""):
+
+                    processed.append((
+                        field_name, field_data))
+
+            return processed
+        self._nodes = process_children()
+
+    @property
+    def resource_id(self):
+        return self._uuid
+
+    @property
+    def nodes(self):
+        return self._nodes
+
+
+class Migration:
+    # this class handles details like the resource/output locations,
+    # configuration, IO, and worker spawning
+
+    def __init__(self, v3_file, mappings_dir, output_dir,
+                 config=".migrator_config.json"):
+        self._output_dir = output_dir
+        self._resource_models = {}
+
+        with open(config, 'r') as config:
+            self._config = json.load(config)
+
+        self.import_v3_resources(v3_file, mappings_dir)
+
+    @property
+    def resource_models(self):
+        return self._resource_models
+
+    def import_v3_resources(self, v3_file, mappings_dir):
+
+        v3_sorted = {}
+        namediffs = self._config['namediffs']
+        graphdiffs = self._config['graphdiffs']
+        graphdiff_path = self._config['graphdiff_path']
+
+        with open(v3_file, 'rb') as opendata:
+            v3_data = json.load(opendata)
+
+            for r in v3_data['resources']:
+                if not r['entitytypeid'] in v3_sorted.keys():
+                    v3_sorted[r['entitytypeid']] = [r]
+                else:
+                    v3_sorted[r['entitytypeid']].append(r)
+
+        for name, resources in v3_sorted.iteritems():
+            mapping_path = mappings_dir + namediffs[name] + ".zip"
+
+            graphdiff = GraphDiff(name, graphdiff_path +
+                                  graphdiffs[name])
+            mapping = Mapping(mapping_path)
+            converter = DataConverter(mapping, graphdiff)
+
+            model = ResourceModelMigrator(name, converter)
+
+            for resource in resources:
+                model.add_resource(Resource(resource))
+
+            self._resource_models[model.v4_name] = model
+
     def migrate_data(self, process_model='<all>'):
-
-        # create a dictionary of v3 and their corresponding v4 resource model names
-        resource_model_names = {rname: fixer.convert_v3_rname(rname)
-                                for rname in self.v3_json.keys()}
-
-        self.resource_fieldnames = {rname: ["ResourceID"]
-                                    for rname in resource_model_names.values()}
-
-        for resource_type, resources in self.v3_json.iteritems():
-
-            rm_name = resource_model_names[resource_type]
+        for rm_name, migrator in self._resource_models.iteritems():
 
             if process_model != rm_name and process_model != '<all>':
                 continue
 
-            self.v4_data[rm_name] = {}
-
-            logger.info("processing {} resources ({})".format(
-                resource_type, len(resources)))
-            for resource in resources:
-
-                ruuid = resource['entityid']
-                self.process_children(resource['child_entities'], rm_name, ruuid)
-            logger.info("{} resources processed".format(len(self.v4_data[rm_name])))
             filename = os.path.join(self._output_dir, rm_name + '.csv')
-            logger.debug("writing...".format(filename))
+            migrator.converter.mapping.write(self._output_dir)
 
             with open(filename, 'wb') as csvfile:
-                fieldnames = [field for field in
-                              set(self.resource_fieldnames[rm_name])]
-                fieldnames.remove("ResourceID")
-                fieldnames.insert(0, "ResourceID")
-
+                fieldnames = migrator.converter.v4_fieldnames
                 writer = csv.DictWriter(csvfile,
                                         fieldnames=fieldnames)
                 writer.writeheader()
-                for resource in self.v4_data[rm_name].values():
-                    rows = self.create_resource_rows(resource)
-                    for row in rows:
-                        writer.writerow({k: v.encode('utf8') for k, v in row.items()})
-
-            # this line could be commented out if it's desirable to have the entire
-            # v4_data object persist. currently, memory cleanup is prioritized.
-            del self.v4_data[rm_name]
-
-            logger.info("written to {}".format(filename))
+                rows = migrator.migrate()
+                for row in rows:
+                    writer.writerow({k: v.encode('utf8') for k, v in row.items()})
 
 
 def get_logger(level='info'):
@@ -369,8 +427,6 @@ if __name__ == "__main__":
 
     logger = get_logger(lvl)
 
-    fixer = DTFixer(args.mappings, args.output)
-
-    migrator = Migrator(args.v3_data, fixer)
+    migrator = Migration(args.v3_data, args.mappings, args.output)
 
     migrator.migrate_data(process_model=args.process_model)
