@@ -1,5 +1,5 @@
 # coding: utf-8
-import csv
+import unicodecsv as csv
 import json
 import argparse
 import os
@@ -376,12 +376,12 @@ class Migration:
             with open(filename, 'wb') as csvfile:
                 fieldnames = migrator.converter.v4_fieldnames
                 writer = csv.DictWriter(csvfile,
-                                        fieldnames=fieldnames)
+                                        fieldnames=fieldnames,
+                                        encoding='utf-8-sig')
                 writer.writeheader()
                 rows = migrator.migrate()
                 for row in rows:
-                    writer.writerow({k: v.encode('utf8') for k, v in
-                                     row.items()})
+                    writer.writerow(row)
 
 
 def get_logger(level='info'):

@@ -2,3 +2,4 @@ rdflib
 lxml
 fuzzywuzzy
 python-Levenshtein
+unicodecsv
