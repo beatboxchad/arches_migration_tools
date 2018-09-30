@@ -17,6 +17,7 @@ class DTFixer:
             """string - Strings need not be single-quoted unless they contain a
             comma or contain HTML tags (as in the case strings
             display/collected with the rich text editor widget).
+
             """
             # don't manually quote strings for now.
             return data
@@ -70,7 +71,7 @@ class DTFixer:
             double-quotes: "Slate,""Shingles, original"",Thatch".
             """
 
-            return "'{}'".format(data)
+            return data
 
         def fix_filepath(data):
             """
@@ -379,7 +380,8 @@ class Migration:
                 writer.writeheader()
                 rows = migrator.migrate()
                 for row in rows:
-                    writer.writerow({k: v.encode('utf8') for k, v in row.items()})
+                    writer.writerow({k: v.encode('utf8') for k, v in
+                                     row.items()})
 
 
 def get_logger(level='info'):
