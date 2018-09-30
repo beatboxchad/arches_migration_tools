@@ -11,21 +11,6 @@ from fuzzywuzzy import process
 from string import capwords
 from datetime import datetime
 
-parser = argparse.ArgumentParser()
-
-parser.add_argument("v3_data")
-parser.add_argument("-o", "--output",
-                    help="The directory to output CSV and mapping files")
-parser.add_argument("-m", "--mappings",
-                    help="The directory your .mapping zip files are in")
-parser.add_argument("-v", "--verbose", action="store_true",
-                    help="Turns on debug logging and prints to console")
-parser.add_argument("--process-model", default="<all>",
-                    help="Allows you to pass the name of a single resource "
-                    "model to process")
-
-args = parser.parse_args()
-
 
 class DTFixer:
     def __init__(self, mappings_dir, output_dir):
@@ -127,8 +112,8 @@ class DTFixer:
                                                   '.mapping')))
                 resource_name = mapping['resource_model_name']
                 self._names_n_dts[resource_name] = {node['arches_node_name']:
-                                                   node['data_type'] for node in
-                                                   mapping['nodes']}
+                                                    node['data_type'] for node in
+                                                    mapping['nodes']}
                 concepts = json.load(
                     zip.open(mapping_file.replace('.zip',
                                                   '_concepts.json')))
@@ -163,7 +148,6 @@ class DTFixer:
     @property
     def output_dir(self):
         return self._output_dir
-
 
     @property
     def mappings_dir(self):
@@ -233,7 +217,7 @@ class Migrator:
             children = child['child_entities']
 
             v4_field_name = fixer.get_v4_fieldname(resource_name,
-                                                        child['entitytypeid'])
+                                                   child['entitytypeid'])
 
             if len(children) > 0:
 
@@ -244,8 +228,8 @@ class Migrator:
 
             v4_field_data = child['value']
             fixed_field_data = fixer.fix_datatype(resource_name,
-                                                       v4_field_name,
-                                                       v4_field_data)
+                                                  v4_field_name,
+                                                  v4_field_data)
 
             # don't attempt to migrate semantic nodes
             if (v4_field_name is not None and child['businesstablename'] != ""):
@@ -363,6 +347,20 @@ def get_logger(level='info'):
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("v3_data")
+    parser.add_argument("-o", "--output",
+                        help="The directory to output CSV and mapping files")
+    parser.add_argument("-m", "--mappings",
+                        help="The directory your .mapping zip files are in")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Turns on debug logging and prints to console")
+    parser.add_argument("--process-model", default="<all>",
+                        help="Allows you to pass the name of a single resource "
+                        "model to process")
+
+    args = parser.parse_args()
 
     if args.verbose:
         lvl = "debug"
