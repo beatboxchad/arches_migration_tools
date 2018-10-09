@@ -319,10 +319,11 @@ class Migration:
     # this class handles details like the resource/output locations,
     # configuration, IO, and worker spawning
 
-    def __init__(self, v3_file, mappings_dir, output_dir,
+    def __init__(self, v3_file, mappings_dir, output_dir, models_to_use,
                  config=".migrator_config.json"):
         self._output_dir = output_dir
         self._resource_models = {}
+        self._models_to_use = models_to_use
 
         with open(config, 'r') as config:
             self._config = json.load(config)
@@ -332,6 +333,10 @@ class Migration:
     @property
     def resource_models(self):
         return self._resource_models
+        
+    @property
+    def models_to_use(self):
+        return self._models_to_use
 
     def import_v3_resources(self, v3_file, mappings_dir):
 
@@ -344,10 +349,17 @@ class Migration:
             v3_data = json.load(opendata)
 
             for r in v3_data['resources']:
-                if not r['entitytypeid'] in v3_sorted.keys():
-                    v3_sorted[r['entitytypeid']] = [r]
+
+                entitytypeid = r['entitytypeid']
+
+                if not "<all>" in self.models_to_use and not\
+                    entitytypeid in self.models_to_use:
+                    continue
+
+                if not entitytypeid in v3_sorted.keys():
+                    v3_sorted[entitytypeid] = [r]
                 else:
-                    v3_sorted[r['entitytypeid']].append(r)
+                    v3_sorted[entitytypeid].append(r)
 
         for name, resources in v3_sorted.iteritems():
             mapping_path = mappings_dir + namediffs[name] + ".zip"
@@ -366,9 +378,6 @@ class Migration:
 
     def migrate_data(self, process_model='<all>'):
         for rm_name, migrator in self._resource_models.iteritems():
-
-            if process_model != rm_name and process_model != '<all>':
-                continue
 
             filename = os.path.join(self._output_dir, rm_name + '.csv')
             migrator.converter.mapping.write(self._output_dir)
@@ -416,7 +425,7 @@ if __name__ == "__main__":
                         help="The directory your .mapping zip files are in")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Turns on debug logging and prints to console")
-    parser.add_argument("--process-model", default="<all>",
+    parser.add_argument("--process-model", nargs="+", default=["<all>"],
                         help="Allows you to pass the name of a single resource "
                         "model to process")
 
@@ -429,6 +438,6 @@ if __name__ == "__main__":
 
     logger = get_logger(lvl)
 
-    migrator = Migration(args.v3_data, args.mappings, args.output)
+    migrator = Migration(args.v3_data, args.mappings, args.output, args.process_model)
 
-    migrator.migrate_data(process_model=args.process_model)
+    migrator.migrate_data()
