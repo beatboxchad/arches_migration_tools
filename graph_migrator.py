@@ -77,8 +77,8 @@ class DTFixer:
             """
             file paths may need to be modified upon upload
             """
-            data = data.split('/')
-            return data[-1]
+
+            return os.path.basename(data)
 
         self._fixers = {
             'string': fix_string,

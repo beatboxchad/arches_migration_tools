@@ -4,6 +4,7 @@
         "ACTIVITY.E7": "activity.json", 
         "ACTOR.E39": "actor.json", 
         "HERITAGE_RESOURCE.E18": "heritage-resource.json", 
+        "HERITAGE_RESOURCE_GROUP.E27":  "heritage-resource-group.json",
         "HISTORICAL_EVENT.E5": "historical-event.json", 
         "INFORMATION_RESOURCE.E73": "information-resource.json"
     }, 
@@ -11,6 +12,7 @@
         "ACTIVITY.E7": "Activity", 
         "ACTOR.E39": "Actor", 
         "HERITAGE_RESOURCE.E18": "Historic Resource", 
+        "HERITAGE_RESOURCE_GROUP.E27":  "Historic District",
         "HISTORICAL_EVENT.E5": "Historic Event", 
         "INFORMATION_RESOURCE.E73": "Information Resource"
     }
