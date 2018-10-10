@@ -242,19 +242,30 @@ class ResourceModelMigrator:
 
         resource = list(v4_nodes)
         outrows = []
-        newrow = {u"ResourceID": resource_id}
 
         while len(resource) > 0:
+            logger.debug("-"*80)
+            newrow = {u"ResourceID": resource_id}
+            added = []
 
-            node = resource.pop()  # This modifies in-place
-            if node[0] in newrow.keys():
-                outrows.append(newrow)
-                newrow = {u"ResourceID": resource_id,
-                          node[0]: node[1]}
+            for index, node in enumerate(resource):
+                node_name, value = node[0],node[1]
+                if not node_name in newrow.keys():
+                    added.append(index)
 
-            else:
-                newrow[node[0]] = node[1]
-        outrows.append(newrow)
+                    newrow[node_name] = value
+
+                    # encode to ascii only for logging
+                    v = value.encode('ascii','ignore')
+                    if len(v) > 50:
+                        v = v[:50]
+                    logger.debug("{}: {}".format(node_name, v))
+
+            outrows.append(newrow)
+
+            ## strip out nodes that were just added and run the loop again
+            resource = [v for i,v in enumerate(resource) if not i in added]
+
         return outrows
 
     def convert_v3_rows(self, v3_nodes):
