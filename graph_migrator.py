@@ -373,7 +373,7 @@ class Migration:
                     v3_sorted[entitytypeid].append(r)
 
         for name, resources in v3_sorted.iteritems():
-            mapping_path = mappings_dir + namediffs[name] + ".zip"
+            mapping_path = os.path.join(mappings_dir, namediffs[name] + ".zip")
 
             graphdiff = GraphDiff(name, graphdiff_path +
                                   graphdiffs[name])
