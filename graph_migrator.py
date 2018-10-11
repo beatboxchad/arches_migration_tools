@@ -250,8 +250,9 @@ class ResourceModelMigrator:
             added = []
 
             for index, node in enumerate(resource):
+
                 node_name, value = node[0],node[1]
-                
+
                 ## pass the name and name types off into a different list
                 ## so they can be added to individual rows and primary can
                 ## always be first.
@@ -269,7 +270,7 @@ class ResourceModelMigrator:
                     newrow[node_name] = value
 
                     # encode to ascii only for logging
-                    v = value.encode('ascii','ignore')
+                    v = value.encode('ascii', 'ignore')
                     if len(v) > 50:
                         v = v[:50]
                     logger.debug("{}: {}".format(node_name, v))
@@ -278,7 +279,7 @@ class ResourceModelMigrator:
 
             ## strip out nodes that were just added and run the loop again
             resource = [v for i,v in enumerate(resource) if not i in added]
-        
+
         ## creating special rows to handle name/name type to ensure that the
         ## primary name is the first row. this is for display name indexing.
         primary_uuid = "a4c88313-52c5-4b6a-9579-3fc5aad17335"
@@ -294,7 +295,7 @@ class ResourceModelMigrator:
                 logger.debug(newrow)
             else:
                 outrows.append(newrow)
-                
+
         return outrows
 
     def convert_v3_rows(self, v3_nodes):
@@ -373,7 +374,7 @@ class Migration:
     @property
     def resource_models(self):
         return self._resource_models
-        
+
     @property
     def models_to_use(self):
         return self._models_to_use
@@ -392,8 +393,8 @@ class Migration:
 
                 entitytypeid = r['entitytypeid']
 
-                if not "<all>" in self.models_to_use and not\
-                    entitytypeid in self.models_to_use:
+                if "<all>" not in self.models_to_use and \
+                   entitytypeid not in self.models_to_use:
                     continue
 
                 if not entitytypeid in v3_sorted.keys():
