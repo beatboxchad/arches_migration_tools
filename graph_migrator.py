@@ -242,6 +242,7 @@ class ResourceModelMigrator:
 
         resource = list(v4_nodes)
         outrows = []
+        names,name_types = [],[]
 
         while len(resource) > 0:
             logger.debug("-"*80)
@@ -250,6 +251,18 @@ class ResourceModelMigrator:
 
             for index, node in enumerate(resource):
                 node_name, value = node[0],node[1]
+                
+                ## pass the name and name types off into a different list
+                ## so they can be added to individual rows and primary can
+                ## always be first.
+                if node_name == "Name" or node_name == "Name Type":
+                    if node_name == "Name":
+                        names.append(node)
+                    else:
+                        name_types.append(node)
+                    added.append(index)
+                    continue
+
                 if not node_name in newrow.keys():
                     added.append(index)
 
@@ -265,7 +278,23 @@ class ResourceModelMigrator:
 
             ## strip out nodes that were just added and run the loop again
             resource = [v for i,v in enumerate(resource) if not i in added]
-
+        
+        ## creating special rows to handle name/name type to ensure that the
+        ## primary name is the first row. this is for display name indexing.
+        primary_uuid = "a4c88313-52c5-4b6a-9579-3fc5aad17335"
+        names_concat = zip(names,name_types)
+        for pair in names_concat:
+            newrow = {
+                u"ResourceID": resource_id,
+                pair[0][0]: pair[0][1],
+                pair[1][0]: pair[1][1],
+            }
+            if pair[1][1] == primary_uuid:
+                outrows.insert(0,newrow)
+                logger.debug(newrow)
+            else:
+                outrows.append(newrow)
+                
         return outrows
 
     def convert_v3_rows(self, v3_nodes):
